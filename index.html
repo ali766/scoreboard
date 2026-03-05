@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Basketball Scoreboard</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a1a;
+    color: #fff;
+    font-family: 'Arial Black', sans-serif;
+    width: 100vw; height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ======= SCOREBOARD ======= */
+  .board {
+    width: 96vw;
+    background: linear-gradient(180deg, #111133 0%, #0d0d22 100%);
+    border: 2px solid #2a2a5a;
+    border-radius: 18px;
+    padding: 1.5vh 2vw;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5vh;
+    box-shadow: 0 0 40px rgba(0,100,255,0.15);
+  }
+
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .quarter {
+    font-size: 3.5vw;
+    color: #ffcc00;
+    text-shadow: 0 0 10px #ffcc0088;
+    letter-spacing: 0.1em;
+  }
+
+  .main-clock {
+    font-size: 8vw;
+    color: #fff;
+    text-shadow: 0 0 20px #ffffff88;
+    letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .shot-clock-wrap {
+    text-align: center;
+  }
+  .shot-clock-label { font-size: 1.5vw; color: #aaa; }
+  .shot-clock {
+    font-size: 5vw;
+    color: #00ff88;
+    text-shadow: 0 0 12px #00ff8888;
+    font-variant-numeric: tabular-nums;
+  }
+  .shot-clock.danger { color: #ff3333; text-shadow: 0 0 20px #ff3333; animation: pulse-danger 0.4s infinite; }
+
+  @keyframes pulse-danger {
+    0%,100% { opacity:1; transform:scale(1); }
+    50% { opacity:0.6; transform:scale(1.05); }
+  }
+
+  .teams-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1vw;
+  }
+
+  .team {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5vh;
+  }
+
+  .team-name {
+    font-size: 3.5vw;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .team1 .team-name { color: #4da6ff; text-shadow: 0 0 12px #4da6ff88; }
+  .team2 .team-name { color: #ff6644; text-shadow: 0 0 12px #ff664488; }
+
+  .score {
+    font-size: 13vw;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .team1 .score { color: #4da6ff; text-shadow: 0 0 30px #4da6ff66; }
+  .team2 .score { color: #ff6644; text-shadow: 0 0 30px #ff664466; }
+
+  .fouls-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 2vw;
+  }
+  .fouls { font-size: 2.2vw; color: #ffaa00; }
+  .fouls span { font-size: 1.8vw; color: #888; }
+
+  .divider {
+    width: 2px;
+    background: linear-gradient(180deg, transparent, #ffffff33, transparent);
+    align-self: stretch;
+  }
+
+  /* ======= BRAVO OVERLAY ======= */
+  #bravo-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  /* Rainbow sweep background */
+  #rainbow-bg {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, 
+      #ff000033, #ff770033, #ffff0033, #00ff0033, 
+      #0077ff33, #8800ff33, #ff00ff33);
+    background-size: 400% 400%;
+    animation: rainbow-shift 1s linear infinite;
+  }
+  @keyframes rainbow-shift {
+    0%   { background-position: 0% 50%; filter: hue-rotate(0deg); }
+    100% { background-position: 100% 50%; filter: hue-rotate(360deg); }
+  }
+
+  /* Color flash pulses */
+  #color-flash {
+    position: absolute;
+    inset: 0;
+    animation: color-flash 0.5s ease-in-out infinite alternate;
+  }
+  @keyframes color-flash {
+    0%   { background: radial-gradient(circle at 30% 40%, #ff006644 0%, transparent 60%),
+                        radial-gradient(circle at 70% 60%, #00aaff44 0%, transparent 60%); }
+    25%  { background: radial-gradient(circle at 70% 30%, #ffff0044 0%, transparent 60%),
+                        radial-gradient(circle at 30% 70%, #ff00aa44 0%, transparent 60%); }
+    50%  { background: radial-gradient(circle at 50% 50%, #00ff8844 0%, transparent 60%),
+                        radial-gradient(circle at 20% 20%, #ff440044 0%, transparent 60%); }
+    75%  { background: radial-gradient(circle at 80% 80%, #aa00ff44 0%, transparent 60%),
+                        radial-gradient(circle at 50% 30%, #00ffff44 0%, transparent 60%); }
+    100% { background: radial-gradient(circle at 20% 60%, #ff880044 0%, transparent 60%),
+                        radial-gradient(circle at 80% 20%, #0044ff44 0%, transparent 60%); }
+  }
+
+  /* Strobe beams */
+  #beams-container {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+  .beam {
+    position: absolute;
+    bottom: 0;
+    width: 6px;
+    height: 70vh;
+    transform-origin: bottom center;
+    border-radius: 3px 3px 0 0;
+    opacity: 0;
+    animation: beam-sweep 1.5s ease-in-out infinite;
+  }
+  @keyframes beam-sweep {
+    0%   { opacity:0; transform: rotate(-40deg) scaleY(0.3); }
+    20%  { opacity:0.9; transform: rotate(-20deg) scaleY(1); }
+    50%  { opacity:0.6; transform: rotate(0deg) scaleY(1); }
+    80%  { opacity:0.9; transform: rotate(20deg) scaleY(1); }
+    100% { opacity:0; transform: rotate(40deg) scaleY(0.3); }
+  }
+
+  /* Canvas for lightning & particles */
+  #bravo-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Confetti */
+  .confetti-piece {
+    position: absolute;
+    width: 12px;
+    height: 8px;
+    border-radius: 2px;
+    animation: confetti-fall linear forwards;
+    top: -20px;
+  }
+  @keyframes confetti-fall {
+    0%   { transform: translateY(0) rotate(0deg) scale(1); opacity:1; }
+    80%  { opacity:1; }
+    100% { transform: translateY(110vh) rotate(720deg) scale(0.5); opacity:0; }
+  }
+
+  /* Stars */
+  .star-emoji {
+    position: absolute;
+    font-size: 2.5vw;
+    animation: star-float 2s ease-in-out forwards;
+  }
+  @keyframes star-float {
+    0%   { transform: scale(0) rotate(0deg); opacity:1; }
+    50%  { transform: scale(1.5) rotate(180deg); opacity:1; }
+    100% { transform: scale(0.5) rotate(360deg) translateY(-60px); opacity:0; }
+  }
+
+  /* Flames */
+  .flame {
+    position: absolute;
+    font-size: 3vw;
+    animation: flame-rise 1.5s ease-in forwards;
+    bottom: 0;
+  }
+  @keyframes flame-rise {
+    0%   { transform: translateY(0) scale(1); opacity:1; }
+    100% { transform: translateY(-80vh) scale(0.3); opacity:0; }
+  }
+
+  /* BRAVO text */
+  #bravo-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    z-index: 200;
+  }
+  #bravo-word {
+    font-size: 18vw;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    background: linear-gradient(90deg, 
+      #ff0000, #ff7700, #ffff00, #00ff00, #00aaff, #aa00ff, #ff00aa, #ff0000);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: bravo-gradient 0.8s linear infinite, bravo-bounce 0.6s ease-in-out infinite;
+    filter: drop-shadow(0 0 30px rgba(255,255,0,0.8)) drop-shadow(0 0 60px rgba(255,0,255,0.5));
+  }
+  @keyframes bravo-gradient {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+  @keyframes bravo-bounce {
+    0%,100% { transform: scale(1) rotate(-1deg); }
+    50%      { transform: scale(1.08) rotate(1deg); }
+  }
+
+  #bravo-team-name {
+    font-size: 5vw;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 0 30px #ffff00, 0 0 60px #ff8800;
+    animation: team-pulse 0.8s ease-in-out infinite;
+    margin-top: -1vw;
+    letter-spacing: 0.1em;
+  }
+  @keyframes team-pulse {
+    0%,100% { transform: scale(1); text-shadow: 0 0 30px #ffff00, 0 0 60px #ff8800; }
+    50%      { transform: scale(1.06); text-shadow: 0 0 50px #ffff00, 0 0 100px #ff8800; }
+  }
+
+  /* Rings */
+  .ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 4px solid;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%) scale(0);
+    animation: ring-expand 2s ease-out forwards;
+  }
+  @keyframes ring-expand {
+    0%   { transform: translate(-50%,-50%) scale(0); opacity:1; }
+    100% { transform: translate(-50%,-50%) scale(4); opacity:0; }
+  }
+
+  /* Color panels that flash across screen */
+  .color-panel {
+    position: absolute;
+    width: 100%;
+    height: 20%;
+    opacity: 0;
+    animation: panel-flash 1.2s ease-in-out infinite;
+  }
+  @keyframes panel-flash {
+    0%,100% { opacity:0; transform: scaleX(0); }
+    40%,60% { opacity:0.25; transform: scaleX(1); }
+  }
+
+  /* Disco tiles */
+  .disco-tile {
+    position: absolute;
+    border-radius: 4px;
+    animation: disco-blink linear infinite;
+  }
+  @keyframes disco-blink {
+    0%,100% { opacity:0; }
+    50%      { opacity:0.6; }
+  }
+
+  /* Corner explosions */
+  .corner-burst {
+    position: absolute;
+    font-size: 4vw;
+    animation: corner-spin 0.8s linear infinite;
+  }
+  @keyframes corner-spin {
+    0%   { transform: scale(0) rotate(0deg); opacity:1; }
+    50%  { transform: scale(1.5) rotate(180deg); opacity:0.8; }
+    100% { transform: scale(2) rotate(360deg); opacity:0; }
+  }
+
+  /* Waves */
+  .wave {
+    position: absolute;
+    width: 200%;
+    height: 100px;
+    border-radius: 50%;
+    border: 3px solid;
+    left: -50%;
+    animation: wave-ripple 2s ease-out infinite;
+  }
+  @keyframes wave-ripple {
+    0%   { transform: scaleX(0.3) translateY(0); opacity:0.8; }
+    100% { transform: scaleX(1.2) translateY(-50px); opacity:0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SCOREBOARD -->
+<div class="board">
+  <div class="top-bar">
+    <div class="quarter" id="qtr-display">1st</div>
+    <div class="main-clock" id="main-clock">10:00</div>
+    <div class="shot-clock-wrap">
+      <div class="shot-clock-label">SHOT</div>
+      <div class="shot-clock" id="shot-clock">24.0</div>
+    </div>
+  </div>
+
+  <div class="teams-row">
+    <div class="team team1">
+      <div class="team-name" id="tn1">TEAM 1</div>
+      <div class="score" id="sc1">0</div>
+    </div>
+    <div class="divider"></div>
+    <div class="team team2">
+      <div class="team-name" id="tn2">TEAM 2</div>
+      <div class="score" id="sc2">0</div>
+    </div>
+  </div>
+
+  <div class="fouls-row">
+    <div class="fouls"><span>FOULS: </span><span id="f1">0</span></div>
+    <div class="fouls"><span>FOULS: </span><span id="f2">0</span></div>
+  </div>
+</div>
+
+<!-- BRAVO OVERLAY -->
+<div id="bravo-overlay">
+  <div id="rainbow-bg"></div>
+  <div id="color-flash"></div>
+  <div id="beams-container"></div>
+  <canvas id="bravo-canvas"></canvas>
+
+  <div id="bravo-text">
+    <div id="bravo-word">BRAVO!</div>
+    <div id="bravo-team-name"></div>
+  </div>
+</div>
+
+<script>
+// ===== Firebase =====
+const firebaseConfig = {
+  apiKey: "AIzaSyDummyKey",
+  databaseURL: "https://ok-new-7c868-default-rtdb.firebaseio.com"
+};
+try { firebase.initializeApp(firebaseConfig); } catch(e) {}
+const db = firebase.database ? firebase.database() : null;
+
+// ===== Scoreboard =====
+const QTR_LABELS = ['', '1st', '2nd', '3rd', '4th'];
+
+function fmtTime(sec) {
+  const m = Math.floor(sec/60);
+  const s = sec%60;
+  return m+':'+(s<10?'0':'')+s;
+}
+
+if (db) {
+  db.ref('/live').on('value', snap => {
+    const d = snap.val();
+    if (!d) return;
+    document.getElementById('sc1').textContent = d.sc1 ?? 0;
+    document.getElementById('sc2').textContent = d.sc2 ?? 0;
+    document.getElementById('tn1').textContent = d.tn1 ?? 'TEAM 1';
+    document.getElementById('tn2').textContent = d.tn2 ?? 'TEAM 2';
+    document.getElementById('f1').textContent = d.f1 ?? 0;
+    document.getElementById('f2').textContent = d.f2 ?? 0;
+    const qn = parseInt(d.qtr)||1;
+    document.getElementById('qtr-display').textContent = QTR_LABELS[qn]||QTR_LABELS[1];
+    if (d.mainSec != null) document.getElementById('main-clock').textContent = fmtTime(d.mainSec);
+
+    const shotEl = document.getElementById('shot-clock');
+    const shotVal = parseFloat(d.shot)+(parseFloat(d.shotMs||0)/1000);
+    shotEl.textContent = shotVal.toFixed(1);
+    shotEl.classList.toggle('danger', shotVal < 5);
+  });
+
+  // BRAVO listener
+  let bravoActive = false;
+  db.ref('/bravo').on('value', snap => {
+    const d = snap.val();
+    if (!d) return;
+    if (d.active && !bravoActive) {
+      bravoActive = true;
+      startBravo(d.teamName || '');
+      setTimeout(() => { bravoActive = false; }, 5500);
+    }
+  });
+}
+
+// ===== BRAVO CELEBRATION =====
+const COLORS = [
+  '#ff0000','#ff4400','#ff8800','#ffcc00','#ffff00',
+  '#aaff00','#00ff44','#00ffaa','#00ccff','#0088ff',
+  '#4400ff','#8800ff','#cc00ff','#ff00cc','#ff0088',
+  '#ffffff','#ffddaa','#aaddff'
+];
+
+function rnd(a,b){ return a + Math.random()*(b-a); }
+function rndColor(){ return COLORS[Math.floor(Math.random()*COLORS.length)]; }
+
+function startBravo(teamName) {
+  const overlay = document.getElementById('bravo-overlay');
+  const canvas  = document.getElementById('bravo-canvas');
+  const ctx     = canvas.getContext('2d');
+  overlay.style.display = 'block';
+
+  document.getElementById('bravo-team-name').textContent = teamName;
+
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  buildBeams();
+  buildDiscoTiles();
+  buildColorPanels();
+
+  const particles = [];
+  for(let i=0;i<140;i++) particles.push(makeParticle(canvas));
+  const lightning = [];
+  for(let i=0;i<5;i++)   lightning.push(makeLightning(canvas));
+  spawnConfetti(150);
+  spawnStars(25);
+  spawnFlames(25);
+  spawnRings(8);
+  spawnCornerBursts();
+  spawnWaves(5);
+
+  // Animated color spiral on canvas
+  let spiralAngle = 0;
+  let frame = 0;
+
+  function animate() {
+    if(frame > 300) { endBravo(); return; }
+    frame++;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // Draw spiral rings
+    spiralAngle += 0.05;
+    for(let r=0;r<8;r++){
+      const radius = (r+1)*80 + Math.sin(spiralAngle*2+r)*20;
+      ctx.beginPath();
+      ctx.arc(canvas.width/2, canvas.height/2, radius, 0, Math.PI*2);
+      ctx.strokeStyle = COLORS[(r + frame) % COLORS.length];
+      ctx.lineWidth = 3 + Math.sin(spiralAngle+r)*2;
+      ctx.globalAlpha = 0.3 + Math.sin(spiralAngle+r)*0.2;
+      ctx.stroke();
+    }
+
+    // Particles
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 0.012;
+      if(p.life < 0) resetParticle(p, canvas);
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // Lightning (every 8 frames)
+    if(frame % 8 === 0) {
+      lightning.forEach(l => { resetLightning(l, canvas); });
+    }
+    lightning.forEach(l => {
+      ctx.globalAlpha = l.alpha * (1 - frame%8/8);
+      ctx.strokeStyle = l.color;
+      ctx.lineWidth = l.w;
+      ctx.beginPath();
+      ctx.moveTo(l.x1, l.y1);
+      l.pts.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.lineTo(l.x2, l.y2);
+      ctx.stroke();
+    });
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(animate);
+  }
+  animate();
+
+  // Play audio
+  try {
+    const utter = new SpeechSynthesisUtterance('BRAVO ' + teamName);
+    utter.lang = 'en';
+    utter.rate = 0.8;
+    speechSynthesis.speak(utter);
+  } catch(e) {}
+}
+
+function endBravo() {
+  const overlay = document.getElementById('bravo-overlay');
+  overlay.style.display = 'none';
+  overlay.querySelectorAll('.confetti-piece,.star-emoji,.flame,.ring,.disco-tile,.color-panel,.beam,.corner-burst,.wave').forEach(el => el.remove());
+}
+
+// --- Particles ---
+function makeParticle(canvas) {
+  return {
+    x: rnd(0, canvas.width), y: rnd(-50, canvas.height*0.5),
+    vx: rnd(-3,3), vy: rnd(-5,2),
+    r: rnd(3,7), color: rndColor(), life: rnd(0.5,1)
+  };
+}
+function resetParticle(p, canvas) {
+  p.x = rnd(0, canvas.width); p.y = rnd(-50, 100);
+  p.vx = rnd(-3,3); p.vy = rnd(-5,2);
+  p.r = rnd(3,7); p.color = rndColor(); p.life = 1;
+}
+
+// --- Lightning ---
+function makeLightning(canvas) {
+  const l = {x1:0,y1:0,x2:0,y2:0,pts:[],alpha:0,w:2,color:'#fff'};
+  resetLightning(l, canvas);
+  return l;
+}
+function resetLightning(l, canvas) {
+  l.x1 = rnd(0, canvas.width); l.y1 = 0;
+  l.x2 = l.x1 + rnd(-200,200); l.y2 = canvas.height;
+  l.pts = [];
+  let x=l.x1, y=l.y1;
+  const steps = 12;
+  for(let i=0;i<steps;i++){
+    x += (l.x2-l.x1)/steps + rnd(-60,60);
+    y += canvas.height/steps;
+    l.pts.push({x,y});
+  }
+  l.alpha = rnd(0.4,0.9);
+  l.w = rnd(1,4);
+  l.color = rndColor();
+}
+
+// --- Confetti ---
+function spawnConfetti(n) {
+  const overlay = document.getElementById('bravo-overlay');
+  for(let i=0;i<n;i++){
+    const c = document.createElement('div');
+    c.className = 'confetti-piece';
+    c.style.cssText = `
+      left:${rnd(0,100)}%;
+      background:${rndColor()};
+      width:${rnd(8,16)}px; height:${rnd(5,10)}px;
+      border-radius:${Math.random()>0.5?'50%':'3px'};
+      animation-duration:${rnd(1.5,3.5)}s;
+      animation-delay:${rnd(0,1.5)}s;
+      transform:rotate(${rnd(0,360)}deg);
+    `;
+    overlay.appendChild(c);
+  }
+}
+
+// --- Stars ---
+function spawnStars(n) {
+  const overlay = document.getElementById('bravo-overlay');
+  const emojis = ['⭐','🌟','✨','💫','🔥','❤️‍🔥','💥','🎇','🎆'];
+  for(let i=0;i<n;i++){
+    const s = document.createElement('div');
+    s.className = 'star-emoji';
+    s.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+    s.style.cssText = `
+      left:${rnd(5,95)}%; top:${rnd(5,85)}%;
+      animation-duration:${rnd(1,2.5)}s;
+      animation-delay:${rnd(0,2)}s;
+      font-size:${rnd(2,5)}vw;
+    `;
+    overlay.appendChild(s);
+  }
+}
+
+// --- Flames ---
+function spawnFlames(n) {
+  const overlay = document.getElementById('bravo-overlay');
+  for(let i=0;i<n;i++){
+    const f = document.createElement('div');
+    f.className = 'flame';
+    f.textContent = Math.random()>0.5 ? '🔥' : '💥';
+    f.style.cssText = `
+      left:${rnd(0,100)}%;
+      font-size:${rnd(2,5)}vw;
+      animation-duration:${rnd(1,2.5)}s;
+      animation-delay:${rnd(0,1.5)}s;
+    `;
+    overlay.appendChild(f);
+  }
+}
+
+// --- Rings ---
+function spawnRings(n) {
+  const overlay = document.getElementById('bravo-overlay');
+  const ringColors = ['#ff0088','#00ffaa','#ffff00','#00aaff','#ff8800','#aa00ff','#00ff00','#ff0000'];
+  for(let i=0;i<n;i++){
+    const r = document.createElement('div');
+    r.className = 'ring';
+    const size = rnd(60,200);
+    r.style.cssText = `
+      width:${size}px; height:${size}px;
+      border-color:${ringColors[i%ringColors.length]};
+      animation-delay:${rnd(0,2)}s;
+      animation-duration:${rnd(1.5,3)}s;
+      box-shadow: 0 0 20px ${ringColors[i%ringColors.length]};
+    `;
+    overlay.appendChild(r);
+  }
+}
+
+// --- Beams ---
+function buildBeams() {
+  const container = document.getElementById('beams-container');
+  const beamColors = ['#ff0066','#ffaa00','#00ffcc','#aa00ff','#0088ff','#ff4400','#00ff88','#ff00aa'];
+  for(let i=0;i<16;i++){
+    const b = document.createElement('div');
+    b.className = 'beam';
+    b.style.cssText = `
+      left:${rnd(5,95)}%;
+      background: linear-gradient(to top, ${beamColors[i%beamColors.length]}, transparent);
+      width:${rnd(4,12)}px;
+      animation-duration:${rnd(0.8,2)}s;
+      animation-delay:${rnd(0,1.5)}s;
+    `;
+    container.appendChild(b);
+  }
+}
+
+// --- Disco tiles ---
+function buildDiscoTiles() {
+  const overlay = document.getElementById('bravo-overlay');
+  for(let i=0;i<80;i++){
+    const t = document.createElement('div');
+    t.className = 'disco-tile';
+    const size = rnd(20,80);
+    t.style.cssText = `
+      left:${rnd(0,100)}%; top:${rnd(0,100)}%;
+      width:${size}px; height:${size}px;
+      background:${rndColor()};
+      border-radius:${Math.random()>0.5?'50%':'4px'};
+      animation-duration:${rnd(0.2,0.8)}s;
+      animation-delay:${rnd(0,1)}s;
+    `;
+    overlay.appendChild(t);
+  }
+}
+
+// --- Color panels ---
+function buildColorPanels() {
+  const overlay = document.getElementById('bravo-overlay');
+  const panelColors = ['#ff0000','#ff8800','#ffff00','#00ff00','#00aaff','#aa00ff','#ff00aa'];
+  const positions = [0, 20, 40, 60, 80];
+  positions.forEach((top, i) => {
+    const p = document.createElement('div');
+    p.className = 'color-panel';
+    p.style.cssText = `
+      top:${top}%;
+      background:${panelColors[i%panelColors.length]};
+      animation-delay:${rnd(0,1.2)}s;
+      animation-duration:${rnd(0.8,1.5)}s;
+      transform-origin: ${Math.random()>0.5?'left':'right'} center;
+    `;
+    overlay.appendChild(p);
+  });
+}
+
+// --- Corner bursts ---
+function spawnCornerBursts() {
+  const overlay = document.getElementById('bravo-overlay');
+  const corners = [
+    {top:'2%',left:'2%'}, {top:'2%',right:'2%'},
+    {bottom:'2%',left:'2%'}, {bottom:'2%',right:'2%'}
+  ];
+  const emojis = ['🎇','🎆','💥','✨'];
+  corners.forEach((pos, i) => {
+    const el = document.createElement('div');
+    el.className = 'corner-burst';
+    el.textContent = emojis[i];
+    let css = `position:absolute; font-size:6vw; animation-duration:0.8s; animation-delay:${rnd(0,1)}s; `;
+    for(const [k,v] of Object.entries(pos)) css += `${k}:${v};`;
+    el.style.cssText = css;
+    overlay.appendChild(el);
+  });
+}
+
+// --- Waves ---
+function spawnWaves(n) {
+  const overlay = document.getElementById('bravo-overlay');
+  const waveColors = ['#ff0088','#00ffcc','#ffff00','#aa00ff','#00aaff'];
+  const positions = [20, 35, 50, 65, 80];
+  for(let i=0;i<n;i++){
+    const w = document.createElement('div');
+    w.className = 'wave';
+    w.style.cssText = `
+      top:${positions[i]}%;
+      border-color:${waveColors[i]};
+      box-shadow: 0 0 15px ${waveColors[i]};
+      animation-delay:${rnd(0,1.5)}s;
+      animation-duration:${rnd(1.5,3)}s;
+    `;
+    overlay.appendChild(w);
+  }
+}
+
+// ===== Test: Press T to trigger BRAVO =====
+document.addEventListener('keydown', e => {
+  if(e.key==='t'||e.key==='T') startBravo('BLUE TEAM');
+});
+</script>
+</body>
+</html>
